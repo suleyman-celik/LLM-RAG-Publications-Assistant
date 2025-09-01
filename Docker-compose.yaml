@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: appdb
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - appnet
+
+  adminer:
+    image: adminer
+    ports:
+      - "8080:8080"
+    networks:
+      - appnet
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - appnet
+
+  app:
+    image: your-app-image
+    environment:
+      DATABASE_URL: postgres://user:password@postgres:5432/appdb
+    depends_on:
+      - postgres
+    networks:
+      - appnet
+
+volumes:
+  postgres_data:
+
+networks:
+  appnet:
+    driver: bridge
