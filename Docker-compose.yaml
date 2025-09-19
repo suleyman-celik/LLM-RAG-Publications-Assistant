@@ -1,43 +1,126 @@
-version: '3.8'
-
-services:
-  postgres:
-    image: postgres:15
-    environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: appdb
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - appnet
-
-  adminer:
-    image: adminer
-    ports:
-      - "8080:8080"
-    networks:
-      - appnet
-
-  grafana:
-    image: grafana/grafana
-    ports:
-      - "3000:3000"
-    networks:
-      - appnet
-
-  app:
-    image: your-app-image
-    environment:
-      DATABASE_URL: postgres://user:password@postgres:5432/appdb
-    depends_on:
-      - postgres
-    networks:
-      - appnet
+networks:
+  # Define the network globally
+  back-tier:
+    driver: bridge
 
 volumes:
-  postgres_data:
+  postgres_data:  # store questions ad feedbacks
+  grafana_data:  # dashboard
+  ollama_data:  # locally phi3 model ~2gb
 
-networks:
-  appnet:
-    driver: bridge
+services:
+
+  # elasticsearch:
+  #   image: "docker.elastic.co/elasticsearch/elasticsearch:8.4.3"
+  #   container_name: elasticsearch
+  #   environment:
+  #     - discovery.type=single-node
+  #     - xpack.security.enabled=false
+  #   ports:
+  #     - "9200:9200"
+  #     - "9300:9300"
+  #   networks:
+  #     - back-tier  # Ensure network is correctly referenced
+
+
+  ollama:
+    tty: true
+    stdin_open: true
+    restart: always
+    image: "ollama/ollama:latest"
+    container_name: ollama
+    pull_policy: always
+    volumes:
+      - ollama_data:/root/.ollama  # put downloaded models
+      - ./ollama_init/entrypoint.sh:/root/entrypoint.sh  # script pull phi3 model and serve
+    ports:
+      - "11434:11434"
+    networks:
+      - back-tier  # Ensure network is correctly referenced
+    entrypoint: ["/usr/bin/bash", "/root/entrypoint.sh"]  # script pull phi3 model and serve
+    # healthcheck:
+    #   # test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+    #   test: ["CMD", "curl", "-f", "http://localhost:11434/"]
+    #   interval: 10s
+    #   timeout: 5s
+    #   retries: 30
+    #   start_period: 60s
+    # https://ollama.com/library/phi3
+
+
+  postgres:
+    restart: unless-stopped
+    image: "postgres_vector"  # "postgres:latest"
+    container_name: postgres_vector
+    env_file:
+      - .env
+    # environment:
+    #   POSTGRES_HOST: "${POSTGRES_HOST:-postgres}"  # Ensure POSTGRES_HOST points to the service name
+    #   POSTGRES_DB: "${POSTGRES_DB:-llm_rag}"
+    #   POSTGRES_USER: "${POSTGRES_USER:-admin}"
+    #   POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-admin}"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # See: https://gist.github.com/onjin/2dd3cc52ef79069de1faa2dfd456c945
+      - ./postgres_init:/docker-entrypoint-initdb.d  # *.sql or *.sh
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    networks:
+      - back-tier  # Ensure network is correctly referenced
+    healthcheck:
+      # test: ["CMD-SHELL", "pg_isready -U user"]
+      test: ["CMD-SHELL", "pg_isready -U admin -d llm_rag"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+  
+  
+  adminer:
+    restart: unless-stopped
+    image: "adminer:latest"
+    container_name: adminer
+    env_file:
+      - .env
+    # environment:
+    #   ADMINER_PORT: "${ADMINER_PORT:-9002}"
+    ports:
+      ## External Access: Used to specify port mappings between the Docker host and the container.
+      ## "<host_port>:<container_port>"
+      - "${ADMINER_PORT:-8080}:8080"
+    networks:
+      - "back-tier"
+    depends_on:
+      - postgres
+
+
+  app:  # LLM RAG
+    tty: true
+    stdin_open: true
+    image: rag  # Flask/FastAPI
+    # build:
+    #   context: .  # Flask/FastAPI
+    #   dockerfile: Dockerfile.rag
+    # env_file:
+    #   - .env
+    environment:
+      # POSTGRES_HOST: "${POSTGRES_HOST:-postgres}"  # Ensure POSTGRES_HOST points to the service name
+      # POSTGRES_DB: "${POSTGRES_DB:-llm_rag}"
+      # POSTGRES_USER: "${POSTGRES_USER:-admin}"
+      # POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-admin}"
+      FLASK_ENV: "development"
+      DATA_PATH: "../data/pdfs_link_who.json"
+      LLM_PROVIDER: "HF"  ## choose one of OPENAI or OLLAMA or HF
+      HF_TOKEN: "hf_..."
+      OPENAI_API_KEY: "sk_..."
+    volumes:
+      # - ./.env:/app/.env
+      # - ./data/pdfs_link_who.json:/data/pdfs_link_who.json
+      - ./assistant:/app
+    command: ["gunicorn", "--bind", "0.0.0.0:5000", "--timeout", "1200", "app:app"]
+    ports:
+      - "${APP_PORT:-5000}:5000"
+    networks:
+      - back-tier  # Ensure network is correctly referenced
+    depends_on:
+      - ollama  # If Neccessary, LLM_PROVIDER OLLAMA
+      - postgres
