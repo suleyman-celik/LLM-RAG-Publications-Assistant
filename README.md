@@ -78,7 +78,7 @@ Optional:
     pip install -r requirements.txt
     ```
 
-<p align="center"> <img src="images/who-pub.png" width="800"> </p>
+##<p align="center"> <img src="images/who-pub.png" width="800"> </p>
 
 ## 🔄 Workflow
 
@@ -94,7 +94,7 @@ Optional:
    [ RAG → LLM (OpenAI or Ollama) ]
 ```
 
-<p align="center"> <img src="images/text_chunks.png" width="800"> </p>
+##<p align="center"> <img src="images/text_chunks.png" width="800"> </p>
 
 ## ▶️ Usage (optionally check [notebook.ipynb](notebook.ipynb))
 
@@ -120,7 +120,7 @@ UI Streamlit
 streamlit run app_st.py
 ```
 
-<p align="center"> <img src="images/app-streamlit.png" width="800"> </p>
+##<p align="center"> <img src="images/app-streamlit.png" width="800"> </p>
 
 ## 🏗️ Architecture Diagram
 
